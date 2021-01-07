@@ -33,13 +33,15 @@ class FeatureEngineer:
         use_technical_indicator=True,
         tech_indicator_list = config.TECHNICAL_INDICATORS_LIST,
         use_turbulence=False,
-        user_defined_feature=False):
+        user_defined_feature=False,
+        ichimoko=False):
 
         self.df = df
         self.use_technical_indicator = use_technical_indicator
         self.tech_indicator_list = tech_indicator_list
         self.use_turbulence=use_turbulence
         self.user_defined_feature=user_defined_feature
+        self.ichimoko=ichimoko
 
         #type_list = self._get_type_list(5)
         #self.__features = type_list
@@ -75,7 +77,54 @@ class FeatureEngineer:
         df=df.fillna(method='bfill').fillna(method="ffill")
         return df
 
+    def ichimoku(dataframe, conversion_line_period=9, base_line_periods=26,
+             laggin_span=52, displacement=26):
+    """
+    Ichimoku cloud indicator
+    Note: Do not use chikou_span for backtesting.
+        It looks into the future, is not printed by most charting platforms.
+        It is only useful for visual analysis
+    :param dataframe: Dataframe containing OHLCV data
+    :param conversion_line_period: Conversion line Period (defaults to 9)
+    :param base_line_periods: Base line Periods (defaults to 26)
+    :param laggin_span: Lagging span period
+    :param displacement: Displacement (shift) - defaults to 26
+    :return: Dict containing the following keys:
+        tenkan_sen, kijun_sen, senkou_span_a, senkou_span_b, leading_senkou_span_a,
+        leading_senkou_span_b, chikou_span, cloud_green, cloud_red
+    """
 
+    tenkan_sen = (dataframe['high'].rolling(window=conversion_line_period).max()
+                  + dataframe['low'].rolling(window=conversion_line_period).min()) / 2
+
+    kijun_sen = (dataframe['high'].rolling(window=base_line_periods).max()
+                 + dataframe['low'].rolling(window=base_line_periods).min()) / 2
+
+    leading_senkou_span_a = (tenkan_sen + kijun_sen) / 2
+
+    leading_senkou_span_b = (dataframe['high'].rolling(window=laggin_span).max()
+                             + dataframe['low'].rolling(window=laggin_span).min()) / 2
+
+    senkou_span_a = leading_senkou_span_a.shift(displacement)
+
+    senkou_span_b = leading_senkou_span_b.shift(displacement)
+
+    chikou_span = dataframe['close'].shift(-displacement)
+
+    cloud_green = (senkou_span_a > senkou_span_b)
+    cloud_red = (senkou_span_b > senkou_span_a)
+
+    return {
+        'tenkan_sen': tenkan_sen,
+        'kijun_sen': kijun_sen,
+        'senkou_span_a': senkou_span_a,
+        'senkou_span_b': senkou_span_b,
+        'leading_senkou_span_a': leading_senkou_span_a,
+        'leading_senkou_span_b': leading_senkou_span_b,
+        'chikou_span': chikou_span,
+        'cloud_green': cloud_green,
+        'cloud_red': cloud_red,
+    }
     def add_technical_indicator(self, data):
         """
         calcualte technical indicators
@@ -97,6 +146,16 @@ class FeatureEngineer:
                 except Exception as e:
                     print(e)
             df[indicator] = indicator_df
+        if ichimoko:
+            df[['tenkan_sen']]=self.ichimoku(df)['tenkan_sen']
+            df[['kijun_sen']]=self.ichimoku(df)['kijun_sen']
+            df[['senkou_span_a']]=self.ichimoku(df)['senkou_span_a']
+            df[['senkou_span_b']]=self.ichimoku(df)['senkou_span_b']
+            df[['leading_senkou_span_a']]=self.ichimoku(df)['leading_senkou_span_a']
+            df[['leading_senkou_span_b']]=self.ichimoku(df)['leading_senkou_span_b']
+            #df[['chikou_span']]=self.ichimoku(df)['chikou_span']
+            df[['cloud_green']]=self.ichimoku(df)['cloud_green']
+            df[['cloud_red']]=self.ichimoku(df)['cloud_red']
         return df
 
     def add_user_defined_feature(self, data):
